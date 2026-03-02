@@ -7,7 +7,7 @@ import plotly.express as px
 st.set_page_config(page_title="Simulateur Héritage Boétie", layout="wide")
 st.title("⚖️ Simulateur de Justice Patrimoniale")
 
-# --- DONNÉES D'ENTRÉE (Exactes selon ton tableau) ---
+# --- DONNÉES D'ENTRÉE  ---
 data = {
     "Groupe": ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10 (9%)", "Top 1%"],
     "Patrimoine_au_deces": [3100, 10600, 25000, 57500, 115000, 190000, 275000, 385000, 538000, 1450000, 5200000],
@@ -21,7 +21,6 @@ df_base = pd.DataFrame(data)
 with st.sidebar:
     st.header("🛠️ Options du Système")
     
-    # Tes nouveaux boutons
     mode_cumul = st.toggle("Fin de l'amnésie fiscale (Cumul vie entière)", value=True)
     mode_distinction = st.toggle("Distinguer Créé / Hérité", value=True)
     
@@ -96,7 +95,7 @@ fig = px.line(df, x="Groupe", y="Taux_effectif_cumulé",
 fig.update_yaxes(tickformat=".0%")
 st.plotly_chart(fig, use_container_width=True)
 
-# TABLEAU FINAL (Ton format exact)
+# TABLEAU FINAL 
 st.subheader("📋 Tableau détaillé des flux")
 st.dataframe(
     df[["Groupe", "Patrimoine_au_deces", "Donations_vie", "Stock_total_transmis", "Impôt_sur_vie", "Taux_effectif_cumulé", "Recettes_totales"]].style.format({
@@ -108,4 +107,5 @@ st.dataframe(
         "Recettes_totales": "{:,.0f} €"
     }), use_container_width=True
 )
+
 
