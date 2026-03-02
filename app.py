@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Simulateur Héritage Boétie", layout="wide")
-st.title("⚖️ Simulateur de Justice Patrimoniale (Tirole-Blanchard)")
+st.title("⚖️ Simulateur de Justice Patrimoniale")
 
-# --- DONNÉES D'ENTRÉE ---
+# --- DONNÉES D'ENTRÉE (Exactes selon ton tableau) ---
 data = {
     "Groupe": ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10 (9%)", "Top 1%"],
     "Patrimoine_au_deces": [3100, 10600, 25000, 57500, 115000, 190000, 275000, 385000, 538000, 1450000, 5200000],
@@ -16,73 +17,94 @@ data = {
 }
 df_base = pd.DataFrame(data)
 
-# --- BARRE LATÉRALE (PARAMÈTRES) ---
+# --- BARRE LATÉRALE ---
 with st.sidebar:
-    st.header("⚙️ Paramètres Généraux")
-    abattement = st.number_input("Abattement (Crédit unique)", value=100000, step=10000)
-    contrib_etat = st.number_input("Contribution État (Md€)", value=0.0) * 1e9
+    st.header("🛠️ Options du Système")
+    
+    # Tes nouveaux boutons
+    mode_cumul = st.toggle("Fin de l'amnésie fiscale (Cumul vie entière)", value=True)
+    mode_distinction = st.toggle("Distinguer Créé / Hérité", value=True)
     
     st.divider()
     
+    abattement = st.number_input("Abattement (Crédit unique)", value=100000, step=10000)
+    contrib_etat = st.number_input("Contribution État (Md€)", value=0.0) * 1e9
+
     with st.expander("📊 Seuils des 10 tranches (€)"):
         seuils = []
-        valeurs_defaut = [10000, 50000, 75000, 100000, 150000, 250000, 500000, 1000000, 2000000]
+        defauts = [10000, 50000, 75000, 100000, 150000, 250000, 500000, 1000000, 2000000]
         for i in range(9):
-            s = st.number_input(f"Seuil {i+1}", value=valeurs_defaut[i], step=10000)
+            s = st.number_input(f"Seuil {i+1}", value=defauts[i], step=10000, key=f"s{i}")
             seuils.append(s)
-        seuils.append(1e12) # Tranche infinie
+        seuils.append(1e12)
 
-    with st.expander("📉 Taux sur le Patrimoine CRÉÉ"):
-        taux_c = []
-        for i in range(10):
-            t = st.slider(f"Taux Créé T{i+1}", 0.0, 1.0, 0.05 + (i*0.05), key=f"c{i}")
-            taux_c.append(t)
+    with st.expander("📉 Taux Patrimoine CRÉÉ"):
+        taux_c = [st.slider(f"Taux C T{i+1}", 0.0, 1.0, 0.05 + (i*0.05), key=f"c{i}") for i in range(10)]
 
-    with st.expander("📈 Taux sur le Patrimoine HÉRITÉ"):
-        taux_h = []
-        for i in range(10):
-            t = st.slider(f"Taux Hérité T{i+1}", 0.0, 1.0, 0.50 + (i*0.05) if i < 9 else 0.99, key=f"h{i}")
-            taux_h.append(t)
+    with st.expander("📈 Taux Patrimoine HÉRITÉ"):
+        taux_h = [st.slider(f"Taux H T{i+1}", 0.0, 1.0, 0.50 + (i*0.05) if i < 9 else 0.99, key=f"h{i}") for i in range(10)]
 
-# --- FONCTION DE CALCUL ---
+# --- CALCULS ---
+df = df_base.copy()
+
+# 1. Gestion du cumul (Amnésie ou non)
+if mode_cumul:
+    df["Stock_total_transmis"] = df["Patrimoine_au_deces"] + df["Donations_vie"]
+else:
+    df["Stock_total_transmis"] = df["Patrimoine_au_deces"]
+
+# 2. Gestion de la distinction
+if mode_distinction:
+    df["Hérité_total"] = df["Stock_total_transmis"] * df["Part_heritee"]
+    df["Créé_total"] = df["Stock_total_transmis"] - df["Hérité_total"]
+else:
+    # Si on ne distingue pas, tout est considéré comme une seule masse (on applique le barème 'Hérité')
+    df["Hérité_total"] = df["Stock_total_transmis"]
+    df["Créé_total"] = 0
+
+# 3. Impôts
 def calculer_impot(montant, seuils, taux):
-    impot = 0
-    bas = 0
+    impot, bas = 0, 0
     for i in range(len(seuils)):
-        haut = seuils[i]
-        taxable = max(0, min(montant, haut) - bas)
+        taxable = max(0, min(montant, seuils[i]) - bas)
         impot += taxable * taux[i]
-        bas = haut
+        bas = seuils[i]
     return impot
 
-# --- LOGIQUE DE SIMULATION ---
-df = df_base.copy()
-df["Stock_total"] = df["Patrimoine_au_deces"] + df["Donations_vie"]
-df["Hérité_total"] = df["Stock_total"] * df["Part_heritee"]
-df["Créé_total"] = df["Stock_total"] - df["Hérité_total"]
+ratio_h = df["Hérité_total"] / df["Stock_total_transmis"].replace(0, 1)
+ratio_c = df["Créé_total"] / df["Stock_total_transmis"].replace(0, 1)
 
-# Répartition de l'abattement
-ratio_cree = df["Créé_total"] / df["Stock_total"].replace(0, 1)
-ratio_herite = df["Hérité_total"] / df["Stock_total"].replace(0, 1)
+df["Impôt_sur_vie"] = df["Hérité_total"].apply(lambda x: calculer_impot(max(0, x - abattement*ratio_h.iloc[0]), seuils, taux_h)) + \
+                      df["Créé_total"].apply(lambda x: calculer_impot(max(0, x - abattement*ratio_c.iloc[0]), seuils, taux_c))
 
-df["C_taxable"] = np.maximum(0, df["Créé_total"] - abattement * ratio_cree)
-df["H_taxable"] = np.maximum(0, df["Hérité_total"] - abattement * ratio_herite)
+df["Taux_effectif_cumulé"] = (df["Impôt_sur_vie"] / df["Stock_total_transmis"]).fillna(0)
+df["Recettes_totales"] = df["Impôt_sur_vie"] * df["Nb_successions"]
 
-df["Impôt"] = df["C_taxable"].apply(lambda x: calculer_impot(x, seuils, taux_c)) + \
-              df["H_taxable"].apply(lambda x: calculer_impot(x, seuils, taux_h))
+# --- AFFICHAGE ---
+total_mrd = df["Recettes_totales"].sum() / 1e9
+dotation = (df["Recettes_totales"].sum() - contrib_etat) / 800000
 
-df["Recettes"] = df["Impôt"] * df["Nb_successions"]
-total_recettes = df["Recettes"].sum()
-dotation_jeune = max(0, (total_recettes - contrib_etat) / 800000)
+m1, m2 = st.columns(2)
+m1.metric("Recettes Fiscales", f"{total_mrd:.2f} Md€")
+m2.metric("Dotation / Jeune", f"{dotation:,.0f} €")
 
-# --- AFFICHAGE DES RÉSULTATS ---
-col1, col2 = st.columns(2)
-col1.metric("Recettes fiscales totales", f"{total_recettes/1e9:.2f} Md€")
-col2.metric("Dotation par jeune", f"{dotation_jeune:,.0f} €")
+# GRAPHIQUE DE PROGRESSIVITÉ
+st.subheader("📈 Progressivité de l'impôt")
+fig = px.line(df, x="Groupe", y="Taux_effectif_cumulé", 
+              title="Taux d'imposition effectif par décile",
+              markers=True, line_shape="spline")
+fig.update_yaxes(tickformat=".0%")
+st.plotly_chart(fig, use_container_width=True)
 
-st.divider()
-st.subheader("Détail par décile de patrimoine")
-cols_finales = ["Groupe", "Stock_total", "Hérité_total", "Créé_total", "Impôt", "Recettes"]
-st.dataframe(df[cols_finales].style.format("{:,.0f}"), use_container_width=True)
-
-st.info("Méthode Tirole-Blanchard : L'impôt est calculé sur le stock cumulé (succession + toutes les donations passées) pour mettre fin à l'amnésie fiscale.")
+# TABLEAU FINAL (Ton format exact)
+st.subheader("📋 Tableau détaillé des flux")
+st.dataframe(
+    df[["Groupe", "Patrimoine_au_deces", "Donations_vie", "Stock_total_transmis", "Impôt_sur_vie", "Taux_effectif_cumulé", "Recettes_totales"]].style.format({
+        "Patrimoine_au_deces": "{:,.0f} €",
+        "Donations_vie": "{:,.0f} €",
+        "Stock_total_transmis": "{:,.0f} €",
+        "Impôt_sur_vie": "{:,.0f} €",
+        "Taux_effectif_cumulé": "{:.1%}",
+        "Recettes_totales": "{:,.0f} €"
+    }), use_container_width=True
+)
