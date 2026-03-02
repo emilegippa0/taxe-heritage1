@@ -58,9 +58,9 @@ if mode_distinction:
     df["Hérité_total"] = df["Stock_total_transmis"] * df["Part_heritee"]
     df["Créé_total"] = df["Stock_total_transmis"] - df["Hérité_total"]
 else:
-    # Si on ne distingue pas, tout est considéré comme une seule masse (on applique le barème 'Hérité')
-    df["Hérité_total"] = df["Stock_total_transmis"]
-    df["Créé_total"] = 0
+    # Si on ne distingue pas, tout est considéré comme une seule masse (on applique le barème 'Crée')
+    df["Créé_total"] = df["Stock_total_transmis"]
+    df["Hérité_total"] = 0
 
 # 3. Impôts
 def calculer_impot(montant, seuils, taux):
@@ -108,3 +108,4 @@ st.dataframe(
         "Recettes_totales": "{:,.0f} €"
     }), use_container_width=True
 )
+
