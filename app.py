@@ -1,69 +1,88 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
 
-# Configuration de la page
-st.set_page_config(page_title="Simulateur de Justice Patrimoniale", layout="wide")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Simulateur Héritage Boétie", layout="wide")
+st.title("⚖️ Simulateur de Justice Patrimoniale (Tirole-Blanchard)")
 
-# Données de base (Seniors 70+)
-data_base = {
+# --- DONNÉES D'ENTRÉE ---
+data = {
     "Groupe": ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10 (9%)", "Top 1%"],
-    "Pat_Décès": [3100, 10600, 25000, 57500, 115000, 190000, 275000, 385000, 538000, 1450000, 5200000],
-    "Donations": [0, 0, 0, 0, 5000, 15000, 45000, 95000, 180000, 480000, 2100000],
-    "Part_H": [0.10, 0.15, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.85, 0.92],
-    "Nb": [12000, 20000, 31000, 39000, 45000, 48000, 51000, 52000, 41000, 31000, 4000]
+    "Patrimoine_au_deces": [3100, 10600, 25000, 57500, 115000, 190000, 275000, 385000, 538000, 1450000, 5200000],
+    "Donations_vie": [0, 0, 0, 0, 5000, 15000, 45000, 95000, 180000, 480000, 2100000],
+    "Part_heritee": [0.10, 0.15, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.85, 0.92],
+    "Nb_successions": [12000, 20000, 31000, 39000, 45000, 48000, 51000, 52000, 41000, 31000, 4000]
 }
+df_base = pd.DataFrame(data)
 
-# --- INTERFACE ---
-st.title("⚖️ Simulateur de Justice Patrimoniale")
-st.markdown("Outil de micro-simulation des flux successoraux (Institut La Boétie)")
-
+# --- BARRE LATÉRALE (PARAMÈTRES) ---
 with st.sidebar:
-    st.header("Configuration")
-    mode_cumul = st.toggle("Fin de l'amnésie (Tirole-Blanchard)", value=True)
-    mode_distinction = st.toggle("Distinguer Créé / Hérité", value=True)
+    st.header("⚙️ Paramètres Généraux")
+    abattement = st.number_input("Abattement (Crédit unique)", value=100000, step=10000)
+    contrib_etat = st.number_input("Contribution État (Md€)", value=0.0) * 1e9
+    
     st.divider()
-    scenario = st.selectbox("Scénario", ["Justice de Rupture", "Social-Démocrate", "Personnalisé"])
+    
+    with st.expander("📊 Seuils des 10 tranches (€)"):
+        seuils = []
+        valeurs_defaut = [10000, 50000, 75000, 100000, 150000, 250000, 500000, 1000000, 2000000]
+        for i in range(9):
+            s = st.number_input(f"Seuil {i+1}", value=valeurs_defaut[i], step=10000)
+            seuils.append(s)
+        seuils.append(1e12) # Tranche infinie
 
-    if scenario == "Justice de Rupture":
-        abatt_val, t_h_max, t_c_max = 150000, 0.99, 0.15
-    elif scenario == "Social-Démocrate":
-        abatt_val, t_h_max, t_c_max = 100000, 0.45, 0.25
-    else:
-        abatt_val, t_h_max, t_c_max = 100000, 0.50, 0.30
+    with st.expander("📉 Taux sur le Patrimoine CRÉÉ"):
+        taux_c = []
+        for i in range(10):
+            t = st.slider(f"Taux Créé T{i+1}", 0.0, 1.0, 0.05 + (i*0.05), key=f"c{i}")
+            taux_c.append(t)
 
-with st.expander("🛠️ Paramètres experts"):
-    col_c, col_h = st.columns(2)
-    with col_c:
-        taux_c = st.slider("Taux max sur le Créé", 0.0, 1.0, t_c_max)
-    with col_h:
-        taux_h = st.slider("Taux max sur l'Hérité", 0.0, 1.0, t_h_max)
-    abattement = st.number_input("Abattement unique", value=abatt_val)
+    with st.expander("📈 Taux sur le Patrimoine HÉRITÉ"):
+        taux_h = []
+        for i in range(10):
+            t = st.slider(f"Taux Hérité T{i+1}", 0.0, 1.0, 0.50 + (i*0.05) if i < 9 else 0.99, key=f"h{i}")
+            taux_h.append(t)
 
-# --- CALCULS ---
-df = pd.DataFrame(data_base)
-df["Stock_Total"] = df["Pat_Décès"] + (df["Donations"] if mode_cumul else 0)
+# --- FONCTION DE CALCUL ---
+def calculer_impot(montant, seuils, taux):
+    impot = 0
+    bas = 0
+    for i in range(len(seuils)):
+        haut = seuils[i]
+        taxable = max(0, min(montant, haut) - bas)
+        impot += taxable * taux[i]
+        bas = haut
+    return impot
 
-if mode_distinction:
-    df["Assiette_H"] = df["Stock_Total"] * df["Part_H"]
-    df["Assiette_C"] = df["Stock_Total"] * (1 - df["Part_H"])
-else:
-    df["Assiette_H"] = df["Stock_Total"]
-    df["Assiette_C"] = 0
+# --- LOGIQUE DE SIMULATION ---
+df = df_base.copy()
+df["Stock_total"] = df["Patrimoine_au_deces"] + df["Donations_vie"]
+df["Hérité_total"] = df["Stock_total"] * df["Part_heritee"]
+df["Créé_total"] = df["Stock_total"] - df["Hérité_total"]
 
-df["Impot"] = np.maximum(0, (df["Assiette_H"] - abattement/2) * taux_h + (df["Assiette_C"] - abattement/2) * taux_c)
-df["Recettes"] = df["Impot"] * df["Nb"]
+# Répartition de l'abattement
+ratio_cree = df["Créé_total"] / df["Stock_total"].replace(0, 1)
+ratio_herite = df["Hérité_total"] / df["Stock_total"].replace(0, 1)
 
-# --- RÉSULTATS ---
-m1, m2 = st.columns(2)
-total_mrd = df["Recettes"].sum() / 1e9
-dotation = (df["Recettes"].sum()) / 800000
+df["C_taxable"] = np.maximum(0, df["Créé_total"] - abattement * ratio_cree)
+df["H_taxable"] = np.maximum(0, df["Hérité_total"] - abattement * ratio_herite)
 
-m1.metric("Recettes Fiscales", f"{total_mrd:.1f} Md€")
-m2.metric("Dotation / Jeune", f"{dotation:,.0f} €")
+df["Impôt"] = df["C_taxable"].apply(lambda x: calculer_impot(x, seuils, taux_c)) + \
+              df["H_taxable"].apply(lambda x: calculer_impot(x, seuils, taux_h))
 
-fig = px.bar(df, x="Groupe", y=["Stock_Total", "Impot"], 
-             barmode="overlay", color_discrete_map={"Stock_Total": "#cbd5e0", "Impot": "#e53e3e"})
-st.plotly_chart(fig, use_container_width=True)
-st.dataframe(df.style.format("{:,.0f}"))
+df["Recettes"] = df["Impôt"] * df["Nb_successions"]
+total_recettes = df["Recettes"].sum()
+dotation_jeune = max(0, (total_recettes - contrib_etat) / 800000)
+
+# --- AFFICHAGE DES RÉSULTATS ---
+col1, col2 = st.columns(2)
+col1.metric("Recettes fiscales totales", f"{total_recettes/1e9:.2f} Md€")
+col2.metric("Dotation par jeune", f"{dotation_jeune:,.0f} €")
+
+st.divider()
+st.subheader("Détail par décile de patrimoine")
+cols_finales = ["Groupe", "Stock_total", "Hérité_total", "Créé_total", "Impôt", "Recettes"]
+st.dataframe(df[cols_finales].style.format("{:,.0f}"), use_container_width=True)
+
+st.info("Méthode Tirole-Blanchard : L'impôt est calculé sur le stock cumulé (succession + toutes les donations passées) pour mettre fin à l'amnésie fiscale.")
