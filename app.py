@@ -4,7 +4,7 @@ import numpy as np
 import plotly.express as px
 
 # CONFIGURATION 
-st.set_page_config(page_title="Simulateur Heritage Boetie", layout="wide")
+st.set_page_config(page_title="Simulateur de reforme de l'impot sur les successions", layout="wide")
 
 # TITRE ET INTRODUCTION 
 st.title("Simulateur de reforme de l'impot sur les successions")
@@ -129,4 +129,5 @@ st.dataframe(
 # BOUTON DE TELECHARGEMENT
 csv = df.to_csv(index=False).encode('utf-8')
 st.download_button("Telecharger les donnees (CSV)", data=csv, file_name="simulation_boetie.csv", mime="text/csv")
+
 
