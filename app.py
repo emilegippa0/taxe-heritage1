@@ -95,7 +95,7 @@ df["Taux_effectif"] = (df["Impot_enfant"] / df["Part_enfant"]).fillna(0)
 # RESULTATS 
 total_mrd = df["Recettes_totales"].sum() / 1e9
 dotation_totale = max(0, (df["Recettes_totales"].sum() - contrib_etat) / 800000)
-annuite = dotation_totale / 7
+annuite = dotation_totale / 8
 
 c1, c2 = st.columns(2)
 c1.metric("Recettes Fiscales Totales", f"{total_mrd:.2f} Md EUR")
@@ -129,5 +129,6 @@ st.dataframe(
 # BOUTON DE TELECHARGEMENT
 csv = df.to_csv(index=False).encode('utf-8')
 st.download_button("Telecharger les donnees (CSV)", data=csv, file_name="simulation_boetie.csv", mime="text/csv")
+
 
 
