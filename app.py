@@ -104,7 +104,7 @@ st.info(f"Soit un versement de {annuite:,.0f} EUR par an pour chaque jeune entre
 
 st.plotly_chart(px.line(df, x="Groupe", y="Taux_effectif", markers=True, title="Progressivite de l'impot (Taux effectif par enfant)").update_yaxes(tickformat=".0%"), use_container_width=True)
 
-# TABLEAU COMPLET (OPTIMISE)
+# TABLEAU COMPLET 
 st.subheader("Detail des flux par decile")
 
 df_display = df[["Groupe", "Part_enfant", "H_enfant", "C_enfant", "Impot_enfant", "Taux_effectif", "Recettes_totales"]].copy()
@@ -129,6 +129,7 @@ st.dataframe(
 # BOUTON DE TELECHARGEMENT
 csv = df.to_csv(index=False).encode('utf-8')
 st.download_button("Telecharger les donnees (CSV)", data=csv, file_name="simulation_boetie.csv", mime="text/csv")
+
 
 
 
